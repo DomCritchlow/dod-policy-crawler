@@ -1,17 +1,60 @@
 import scrapy
 import re
 import bs4
+from urllib.parse import urljoin, urlparse
+from os.path import splitext
+import datetime
+from dodPolicyCrawler.items import DodpolicycrawlerItem
+from dodPolicyCrawler.utils import dict_to_sha256_hex_digest
 
-
-class ExampleSpider(scrapy.Spider):
+class DoDIssuances(scrapy.Spider):
     name = "dod_issuances"
     start_urls = ['https://www.esd.whs.mil/DD/DoD-Issuances/DTM/']
     allowed_domains = ['www.esd.whs.mil']
 
+    @staticmethod
+    def get_href_file_extension(url: str) -> str:
+        """
+            returns file extension if exists in passed url path, else UNKNOWN
+            UNKNOWN is used so that if the website fixes their link it will trigger an update from the doc type changing
+        """
+        path = urlparse(url).path
+        ext: str = splitext(path)[1].replace('.', '').lower()
+
+        if not ext:
+            return "Unkown"
+
+        return ext.strip()
+
+    @staticmethod
+    def get_pub_date(publication_date):
+        '''
+        This function convverts publication_date from DD Month YYYY format to YYYY-MM-DDTHH:MM:SS format.
+        T is a delimiter between date and time.
+        '''
+        try:
+            date = parse_timestamp(publication_date, None)
+            if date:
+                publication_date = datetime.strftime(date, '%Y-%m-%dT%H:%M:%S')
+        except:
+            publication_date = ""
+        return publication_date
+
+    @staticmethod
+    def get_display_doc_type(doc_type):
+        display_dict = {
+            "dod": 'Issuance',
+            "dodm": 'Manual',
+            "dodi": 'Instruction',
+            "dodd": 'Directive',
+            "ai": 'Instruction',
+            "dtm": 'Memorandum'
+            }
+        return display_dict.get(doc_type, "Document")
+    
     def parse(self, response):
         links = response.css('li.col-sm-6')[0].css('a')
         yield from response.follow_all(links[4:-1], self.parse_documents)
-        pass
 
     def parse_documents(self, response):
 
@@ -77,8 +120,8 @@ class ExampleSpider(scrapy.Spider):
 
                 # set document variables based on current column
                 if idx == 0:
-                    #pdf_url = abs_url(
-                    #    base_url, cell.a['href']).replace(' ', '%20')
+                    #pdf_url = abs_url(base_url, cell.a['href']).replace(' ', '%20')
+                    pdf_url = urljoin(base_url, cell.a['href']).replace(' ', '%20')
                     pdf_di = {
                         "doc_type": 'pdf',
                         "download_url": pdf_url,
@@ -114,8 +157,6 @@ class ExampleSpider(scrapy.Spider):
                     chapter_date = data
                 elif idx == 5:
                     exp_date = data
-                elif opr_idx and idx == opr_idx:
-                    office_primary_resp = self.fix_oprs(data)
 
                 # set boolean if CAC is required to view document
                 cac_login_required = True if any(x in pdf_url for x in cac_required) \
@@ -135,5 +176,67 @@ class ExampleSpider(scrapy.Spider):
                 "office_primary_resp": office_primary_resp
             }
             doc_item = self.populate_doc_item(fields)
-            print(fields)
-            yield doc_item
+            #print(fields)
+            yield doc_item#"doc_item_placeholder"#doc_item
+
+
+    def populate_doc_item(self, fields):
+        '''
+        This functions provides both hardcoded and computed values for the variables
+        in the imported DocItem object and returns the populated metadata object
+        '''
+        display_org = "Dept. of Defense" # Level 1: GC app 'Source' filter for docs from this crawler
+        data_source = "WHS DoD Directives Division" # Level 2: GC app 'Source' metadata field for docs from this crawler
+        source_title = "Unlisted Source" # Level 3 filter
+        is_revoked = False
+        cac_login_required = fields.get("cac_login_required")
+        source_page_url = fields.get("page_url")
+        office_primary_resp = fields.get("office_primary_resp")
+
+        doc_name = fields.get("doc_name").strip()
+        doc_title = re.sub('\\"', '', fields.get("doc_title"))
+        doc_num = fields.get("doc_num").strip()
+        doc_type = fields.get("doc_type").strip()
+        publication_date = fields.get("publication_date").strip()
+        publication_date = self.get_pub_date(publication_date)
+        display_source = data_source + " - " + source_title
+        display_title = doc_type + " " + doc_num + ": " + doc_title
+        display_doc_type = self.get_display_doc_type(doc_type.lower())
+        download_url = fields.get("pdf_url")
+        file_type = self.get_href_file_extension(download_url)
+        downloadable_items = [fields.get("pdf_di")]
+        version_hash_fields = {
+                "download_url": download_url,
+                "pub_date": publication_date,
+                "change_date": fields.get("chapter_date").strip(),
+                "doc_num": doc_num,
+                "doc_name": doc_name,
+                "display_title": display_title
+            }
+        source_fqdn = urlparse(source_page_url).netloc
+        version_hash = dict_to_sha256_hex_digest(version_hash_fields)
+
+        return DodpolicycrawlerItem(
+                doc_name = doc_name,
+                doc_title = doc_title,
+                doc_num = doc_num,
+                doc_type = doc_type,
+                display_doc_type = display_doc_type,
+                publication_date = publication_date,
+                cac_login_required = cac_login_required,
+                crawler_used = self.name,
+                downloadable_items = downloadable_items,
+                source_page_url = source_page_url,
+                source_fqdn = source_fqdn,
+                download_url = download_url, 
+                version_hash_raw_data = version_hash_fields,
+                version_hash = version_hash,
+                display_org = display_org,
+                data_source = data_source,
+                source_title = source_title,
+                display_source = display_source,
+                display_title = display_title,
+                file_ext = file_type,
+                is_revoked = is_revoked,
+                office_primary_resp = office_primary_resp,
+            )
