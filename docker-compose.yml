@@ -1,0 +1,9 @@
+version: '3'
+
+services:
+  crawler:
+    build: .
+    container_name: dod-policy-crawler
+    command: tail -f /dev/null
+    volumes:
+      - .:/usr/src/app
