@@ -7,6 +7,8 @@ import scrapy
 
 
 class DodpolicycrawlerItem(scrapy.Item):
+    _id = scrapy.Field()
+    _needs_download = scrapy.Field()
     doc_name = scrapy.Field()
     doc_title = scrapy.Field()
     doc_num = scrapy.Field()
