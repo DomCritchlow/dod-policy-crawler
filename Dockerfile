@@ -9,6 +9,6 @@ RUN pip install --no-cache-dir --upgrade -r requirements.txt
 
 # copy the src to the folder
 COPY . . 
-
+WORKDIR /usr/src/app/src
 # keep container running
-ENTRYPOINT ["tail", "-f", "/dev/null"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

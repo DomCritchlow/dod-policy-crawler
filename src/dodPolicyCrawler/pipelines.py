@@ -21,14 +21,14 @@ class DodpolicycrawlerPipeline:
 class MongoDBPipeline(object):
 
     def __init__(self):
-        connection = pymongo.MongoClient(
+        self.connection = pymongo.MongoClient(
             os.environ['MONGODB_URI'],
-            username=os.environ['MONGO_INITDB_ROOT_USERNAME'],
-            password=os.environ['MONGO_INITDB_ROOT_PASSWORD'],
-            authMechanism=os.environ['MONGO_INITDB_AUTHMECH']
+            username=os.environ['MONGO_SCRAPY_USERNAME'],
+            password=os.environ['MONGO_SCRAPY_PASSWORD'],
+            authMechanism=os.environ['MONGO_SCRAPY_AUTHMECH']
         )
-        db = connection[os.environ['MONGODB_DB']]
-        self.collection = db[os.environ['MONGODB_COLLECTION']]
+        self.db = self.connection[os.environ['MONGODB_DB']]
+        self.collection = self.db[os.environ['MONGODB_COLLECTION']]
 
     def process_item(self, item, spider):
         valid = True
@@ -45,3 +45,6 @@ class MongoDBPipeline(object):
             self.collection.insert_one(dict(item))
             logging.debug("Created a new record of policy!")
         return item
+    
+    def close_spider(self, spider): 
+        self.connection.close()

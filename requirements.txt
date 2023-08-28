@@ -1,3 +1,10 @@
 Scrapy
 beautifulsoup4
 pymongo
+fastapi
+uvicorn
+langchain
+unstructured
+elasticsearch
+sentence_transformers
+opensearch-py
